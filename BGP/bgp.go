@@ -362,33 +362,59 @@ func findInCN(IP string) bool {
 	return false
 }
 
+//type BGPConfig struct {
+//	ID           string
+//	ServerASN    int
+//	NextHop      string
+//	ClientIP     string
+//	ClientASN    int
+//	UpdateSource string
+//}
+// 1. 修改结构体，支持多 Peer
+type PeerConfig struct {
+	IP  string
+	ASN int
+}
+
 type BGPConfig struct {
 	ID           string
 	ServerASN    int
 	NextHop      string
-	ClientIP     string
-	ClientASN    int
 	UpdateSource string
+	Peers        []PeerConfig // 改为切片
 }
-
 var bgpConfig BGPConfig
 
+// 2. 修正 loadIni 函数：支持 [peer "xxx"] 或带名字的 section
 func loadIni(configPath string) *BGPConfig {
-	cfg, _ := ini.Load(configPath)
-	fmt.Println("start load")
+	cfg, err := ini.Load(configPath)
+	if err != nil {
+		fmt.Printf("Failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("start load config")
 
 	bgpConfig.ID = cfg.Section("server").Key("RouterId").String()
-	//
 	sAsn, _ := strconv.Atoi(cfg.Section("server").Key("ASN").String())
 	bgpConfig.ServerASN = sAsn
 	bgpConfig.NextHop = cfg.Section("server").Key("NextHop").String()
-	bgpConfig.ClientIP = cfg.Section("peer").Key("IP").String()
 	bgpConfig.UpdateSource = cfg.Section("server").Key("UpdateSource").String()
-	cAsn, _ := strconv.Atoi(cfg.Section("peer").Key("ASN").String())
-	bgpConfig.ClientASN = cAsn
+
+	// 遍历所有 section，匹配以 "peer" 开头或名为 "peer" 的配置
+	for _, sec := range cfg.Sections() {
+		if strings.HasPrefix(sec.Name(), "peer") {
+			ip := sec.Key("IP").String()
+			asn, _ := strconv.Atoi(sec.Key("ASN").String())
+			if ip != "" && asn != 0 {
+				bgpConfig.Peers = append(bgpConfig.Peers, PeerConfig{
+					IP:  ip,
+					ASN: asn,
+				})
+			}
+		}
+	}
 
 	return &bgpConfig
-
 }
 
 func main() {
@@ -446,12 +472,27 @@ func main() {
 			MultihopTtl: 32, // 设置跳数
 		},
 	}
-	if err := s.AddPeer(context.Background(), &api.AddPeerRequest{
-
-		Peer: n,
-	}); err != nil {
-		log.Fatal(err)
-	}
+	// 循环添加 INI 配置文件中的每一个 Peer 邻居
+    for _, peer := range bgpConfig.Peers {
+        n := &api.Peer{
+            Conf: &api.PeerConf{
+                NeighborAddress: peer.IP,
+                PeerAsn:         uint32(peer.ASN),
+            },
+            Transport: &api.Transport{
+                LocalAddress: bgpConfig.UpdateSource,
+            },
+            EbgpMultihop: &api.EbgpMultihop{
+                Enabled:     true,
+                MultihopTtl: 32,
+            },
+        }
+        if err := s.AddPeer(context.Background(), &api.AddPeerRequest{Peer: n}); err != nil {
+            log.Errorf("Failed to add peer %s: %v", peer.IP, err)
+        } else {
+            log.Infof("Successfully added BGP peer: %s (AS%d)", peer.IP, peer.ASN)
+        }
+    }
 	// add routes
 	// do something useful here instead of exiting
 	//USA_BGP.ZipLoad("USA_BGPZip.gob")
