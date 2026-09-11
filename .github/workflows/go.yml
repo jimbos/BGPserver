@@ -1,36 +1,25 @@
-name: Go Build patch-1
+name: Go CI
 
 on:
   push:
-    branches: [ "patch-1" ] # 监听 patch-1 分支的提交
   pull_request:
-    branches: [ "patch-1" ] # 监听针对 patch-1 分支的 PR
-  workflow_dispatch:        # 支持在网页上手动点击运行
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
       - name: Run Tests
+        working-directory: BGP
         run: go test -v ./...
 
-      - name: Build Binary
-        run: |
-          # 静态编译生成适用于 Linux 的 bin 文件
-          # 将 app-patch1-linux-amd64.bin 换成你想要的文件名，"." 换成你的入口目录路径
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o app-patch1-linux-amd64.bin .
+      - name: Build
+        working-directory: BGP
+        run: go build ./...
 
-      - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: patch-1-binary  # 产物压缩包的名称
-          path: app-patch1-linux-amd64.bin # 编译出来的 bin 文件路径
-          retention-days: 7     # 产物保留天数
