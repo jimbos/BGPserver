@@ -5,13 +5,15 @@ on:
   pull_request:
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Source
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
@@ -19,7 +21,24 @@ jobs:
         working-directory: BGP
         run: go test -v ./...
 
-      - name: Build
+      - name: Build Linux Binary
         working-directory: BGP
-        run: go build ./...
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -o dist/bgp-linux-amd64 .
 
+      - name: Build Windows Binary
+        working-directory: BGP
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o dist/bgp-windows-amd64.exe .
+
+      - name: Build macOS Binary
+        working-directory: BGP
+        run: |
+          GOOS=darwin GOARCH=amd64 go build -o dist/bgp-darwin-amd64 .
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-builds
+          path: BGP/dist/
